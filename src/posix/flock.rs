@@ -1,24 +1,29 @@
 //! Internal convenience wrappers for using `flock`.
 
 use crate::{Error, ErrorKind, Result};
-use nix::fcntl::FlockArg;
+use nix::fcntl::{Flock, FlockArg};
 use std::os::unix::prelude::*;
+use std::fs::File;
 
 /// Convenience method to acquire an exclusive lock using flock
 ///
 /// This is used ensure that no other applications are using the port. This requires that the other
 /// application also uses flock, so this does not work with all applications.
 pub(crate) fn lock_exclusive(fd: RawFd) -> Result<()> {
-    nix::fcntl::flock(fd, FlockArg::LockExclusiveNonblock).map_err(|e| {
-        if e == nix::errno::Errno::EWOULDBLOCK {
-            Error::new(
-                ErrorKind::NoDevice,
-                "Unable to acquire exclusive lock on serial port",
-            )
-        } else {
-            e.into()
+    let raw_fd = unsafe { File::from_raw_fd(fd) };
+    match Flock::lock(raw_fd, FlockArg::LockExclusiveNonblock) {
+        Ok(_flock) => Ok(()),
+        Err((_fd, e)) => {
+            if e == nix::errno::Errno::EWOULDBLOCK {
+                Err(Error::new(
+                    ErrorKind::NoDevice,
+                    "Unable to acquire exclusive lock on serial port",
+                ))
+            } else {
+                Err(e.into())
+            }
         }
-    })
+    }
 }
 
 /// Convenience method to acquire a shared lock using flock
@@ -27,14 +32,18 @@ pub(crate) fn lock_exclusive(fd: RawFd) -> Result<()> {
 /// using a shared lock, but this makes sure that they cannot acquire an exclusive lock while we're
 /// using the port.
 pub(crate) fn lock_shared(fd: RawFd) -> Result<()> {
-    nix::fcntl::flock(fd, FlockArg::LockSharedNonblock).map_err(|e| {
-        if e == nix::errno::Errno::EWOULDBLOCK {
-            Error::new(
-                ErrorKind::NoDevice,
-                "Unable to acquire shared lock on serial port",
-            )
-        } else {
-            e.into()
+    let raw_fd = unsafe { File::from_raw_fd(fd) };
+    match Flock::lock(raw_fd, FlockArg::LockSharedNonblock) {
+        Ok(_flock) => Ok(()),
+        Err((_fd, e)) => {
+            if e == nix::errno::Errno::EWOULDBLOCK {
+                Err(Error::new(
+                    ErrorKind::NoDevice,
+                    "Unable to acquire shared lock on serial port",
+                ))
+            } else {
+                Err(e.into())
+            }
         }
-    })
+    }
 }
